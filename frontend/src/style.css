@@ -12,6 +12,10 @@ body {
   background: #06080f;
 }
 
+.hidden {
+  display: none !important;
+}
+
 .landing {
   position: relative;
   min-height: 100vh;
@@ -111,6 +115,93 @@ h1 {
   backdrop-filter: blur(4px);
 }
 
+.auth-shell {
+  min-height: 100vh;
+  background: radial-gradient(circle at 90% 0%, rgba(123, 57, 255, 0.22), rgba(16, 16, 42, 0.1) 36%), #171738;
+  display: grid;
+  place-items: center;
+  padding: 28px 16px;
+}
+
+.auth-card {
+  width: min(560px, 100%);
+  border-radius: 24px;
+  border: 1px solid rgba(160, 171, 255, 0.2);
+  background: rgba(16, 17, 49, 0.84);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  padding: 26px;
+}
+
+.back-btn {
+  border: 0;
+  background: transparent;
+  color: #f44cff;
+  font-size: 1.6rem;
+  line-height: 1;
+  padding: 0;
+  min-width: 0;
+  height: auto;
+}
+
+.auth-card h2 {
+  margin: 8px 0 6px;
+  text-align: center;
+  font-size: clamp(1.4rem, 3vw, 2rem);
+}
+
+.auth-subtitle {
+  margin: 0 0 20px;
+  color: #b8bcde;
+  text-align: center;
+}
+
+.auth-card label {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0;
+  color: #cbd0f7;
+}
+
+.auth-card input {
+  width: 100%;
+  border-radius: 999px;
+  border: 1px solid rgba(175, 186, 255, 0.5);
+  background: rgba(22, 24, 61, 0.6);
+  color: #fff;
+}
+
+.auth-btn {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.link-btn {
+  margin-top: 16px;
+  border: 0;
+  background: transparent;
+  color: #d6d9f3;
+  text-decoration: underline;
+  width: 100%;
+}
+
+.auth-card pre {
+  margin: 12px 0 0;
+  background: rgba(9, 10, 32, 0.9);
+  border: 1px solid rgba(156, 163, 245, 0.2);
+  border-radius: 14px;
+  color: #edf0ff;
+  padding: 12px;
+  min-height: 90px;
+  white-space: pre-wrap;
+}
+
+.auth-message {
+  margin-top: 12px;
+  color: #f0f2ff;
+  min-height: 22px;
+}
+
 @media (max-width: 960px) {
   .phones {
     right: -46px;
@@ -142,6 +233,10 @@ h1 {
   .btn {
     min-width: 0;
     width: 100%;
+  }
+
+  .auth-card {
+    padding: 22px 16px 18px;
   }
 
   .phones {
