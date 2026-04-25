@@ -4,6 +4,7 @@ const walletOutput = document.getElementById("wallet-output");
 const transferOutput = document.getElementById("transfer-output");
 const signupOutput = document.getElementById("signup-output");
 const loginOutput = document.getElementById("login-output");
+const monitorToggleBtn = document.getElementById("btn-monitor-toggle");
 
 const signupScreen = document.getElementById("signup-screen");
 const loginScreen = document.getElementById("login-screen");
@@ -12,6 +13,9 @@ const activeUser = document.getElementById("active-user");
 
 const USERS_KEY = "kvp_wallet_users_v1";
 const SESSION_KEY = "kvp_wallet_session_v1";
+const MONITOR_AUTO_MS = 15000;
+let monitorAutoOn = true;
+let monitorTimer = null;
 
 function readUsers() {
   try {
@@ -52,6 +56,66 @@ function generatePassphrase() {
   return Array.from({ length: 12 }, () => words[Math.floor(Math.random() * words.length)]).join(" ");
 }
 
+const monitors = [
+  {
+    id: "wallet-public",
+    url: "https://cognitive-wave-fewer-purchase.trycloudflare.com/api/health",
+  },
+  {
+    id: "wallet-local",
+    url: "http://localhost:8098/api/health",
+  },
+];
+
+function setLamp(id, colorClass, text) {
+  const lamp = document.getElementById(`lamp-${id}`);
+  const textNode = document.getElementById(`text-${id}`);
+  lamp.classList.remove("lamp-green", "lamp-yellow", "lamp-red");
+  lamp.classList.add(colorClass);
+  textNode.textContent = text;
+}
+
+async function pingMonitor(target) {
+  const started = performance.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(target.url, {
+      method: "GET",
+      mode: "cors",
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    const ms = Math.round(performance.now() - started);
+    if (!response.ok) {
+      setLamp(target.id, "lamp-red", `DOWN (HTTP ${response.status})`);
+      return;
+    }
+    if (ms > 1200) {
+      setLamp(target.id, "lamp-yellow", `SLOW (${ms} ms)`);
+      return;
+    }
+    setLamp(target.id, "lamp-green", `UP (${ms} ms)`);
+  } catch (error) {
+    clearTimeout(timeout);
+    setLamp(target.id, "lamp-red", `DOWN (${String(error).slice(0, 60)})`);
+  }
+}
+
+async function runMonitor() {
+  await Promise.all(monitors.map((m) => pingMonitor(m)));
+}
+
+function setupMonitorAutoRefresh() {
+  if (monitorTimer) {
+    clearInterval(monitorTimer);
+    monitorTimer = null;
+  }
+  if (!monitorAutoOn) return;
+  monitorTimer = setInterval(runMonitor, MONITOR_AUTO_MS);
+}
+
 function backendBase() {
   return (backendInput.value || "").trim().replace(/\/+$/, "");
 }
@@ -77,6 +141,13 @@ document.getElementById("btn-health").addEventListener("click", async () => {
   } catch (error) {
     healthOutput.textContent = String(error);
   }
+});
+
+document.getElementById("btn-monitor-now").addEventListener("click", runMonitor);
+monitorToggleBtn.addEventListener("click", () => {
+  monitorAutoOn = !monitorAutoOn;
+  monitorToggleBtn.textContent = monitorAutoOn ? "Auto Refresh: ON" : "Auto Refresh: OFF";
+  setupMonitorAutoRefresh();
 });
 
 document.getElementById("btn-signup").addEventListener("click", () => {
@@ -169,6 +240,8 @@ document.getElementById("btn-transfer").addEventListener("click", async () => {
 });
 
 (function bootstrapFlow() {
+  runMonitor();
+  setupMonitorAutoRefresh();
   const email = getSessionEmail();
   const users = readUsers();
   const user = users.find((u) => u.email === email);

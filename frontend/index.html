@@ -18,6 +18,27 @@
         <pre id="health-output"></pre>
       </section>
 
+      <section class="card">
+        <h2>BE Public Monitor</h2>
+        <p class="muted">Green = running normal, Yellow = slow/intermittent, Red = down/unreachable.</p>
+        <div class="row">
+          <button id="btn-monitor-now">Refresh Monitor</button>
+          <button id="btn-monitor-toggle" class="ghost">Auto Refresh: ON</button>
+        </div>
+        <div class="monitor-list">
+          <div class="monitor-item">
+            <div class="monitor-name">Wallet Public</div>
+            <div class="monitor-meta">/api/health</div>
+            <div class="monitor-state"><span id="lamp-wallet-public" class="lamp lamp-yellow"></span><span id="text-wallet-public">Checking...</span></div>
+          </div>
+          <div class="monitor-item">
+            <div class="monitor-name">Wallet Local Backend</div>
+            <div class="monitor-meta">localhost:8098</div>
+            <div class="monitor-state"><span id="lamp-wallet-local" class="lamp lamp-yellow"></span><span id="text-wallet-local">Checking...</span></div>
+          </div>
+        </div>
+      </section>
+
       <section id="signup-screen" class="card">
         <h2>Create Wallet</h2>
         <label>Email<input id="signup-email" placeholder="you@domain.com" /></label>

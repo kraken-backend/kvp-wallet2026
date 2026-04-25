@@ -34,6 +34,55 @@ body {
   gap: 8px;
 }
 
+.monitor-list {
+  display: grid;
+  gap: 8px;
+}
+
+.monitor-item {
+  border: 1px solid #d6e0f5;
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.monitor-name {
+  font-weight: 700;
+}
+
+.monitor-meta {
+  font-size: 12px;
+  color: #6377a6;
+}
+
+.monitor-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.lamp {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  display: inline-block;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 0 8px rgba(0, 0, 0, 0.18);
+}
+
+.lamp-green {
+  background: #22c55e;
+}
+
+.lamp-yellow {
+  background: #f59e0b;
+}
+
+.lamp-red {
+  background: #ef4444;
+}
+
 label {
   display: grid;
   gap: 6px;
