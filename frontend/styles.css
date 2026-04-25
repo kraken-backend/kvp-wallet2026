@@ -25,6 +25,15 @@ body {
   gap: 10px;
 }
 
+.hidden {
+  display: none !important;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}
+
 label {
   display: grid;
   gap: 6px;
@@ -44,6 +53,11 @@ button {
   background: #2d5ae2;
   color: white;
   cursor: pointer;
+}
+
+button.ghost {
+  background: #ffffff;
+  color: #1f2c4b;
 }
 
 pre {

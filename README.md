@@ -40,6 +40,11 @@ Buka file:
 
 Isi `Wallet Backend URL` dengan URL backend Go (default: `http://localhost:8098`).
 
+Flow FE:
+- Step 1: Create Wallet (email -> generate passphrase -> copy)
+- Step 2: Login (email + passphrase)
+- Step 3: Wallet Dashboard (load wallet, transfer, logout)
+
 ## 3) Catatan Koneksi KVC
 
 - Wallet backend ini tidak menyimpan ledger sendiri.
@@ -48,3 +53,16 @@ Isi `Wallet Backend URL` dengan URL backend Go (default: `http://localhost:8098`
   - `KVC_API_BASE/gateway/tx/simulate-transfer?mode=api`
 
 Jika endpoint KVC berbeda, tinggal ganti `KVC_API_BASE`.
+
+## 4) One-click backend+tunnel launcher
+
+File:
+
+`D:\upwork\KVP\Codes\run_all_be_and_tunnels.bat`
+
+Yang dijalankan:
+- Rust blockchain node
+- Go blockchain gateway
+- Tunnel blockchain (`localhost:8090`)
+- Go wallet backend (`localhost:8098`)
+- Tunnel wallet (`localhost:8098`)

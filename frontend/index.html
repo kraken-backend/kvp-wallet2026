@@ -9,7 +9,7 @@
   <body>
     <main class="wrap">
       <h1>KVC Wallet</h1>
-      <p class="muted">Frontend -> Wallet Backend Go -> KVC Node</p>
+      <p class="muted">Wallet FE -> Wallet BE (Go) -> KVC</p>
 
       <section class="card">
         <h2>Connection</h2>
@@ -18,16 +18,35 @@
         <pre id="health-output"></pre>
       </section>
 
-      <section class="card">
-        <h2>Wallet Lookup</h2>
-        <label>Address<input id="wallet-address" value="kvp:wallet:demo" /></label>
-        <button id="btn-load-wallet">Load Wallet</button>
-        <pre id="wallet-output"></pre>
+      <section id="signup-screen" class="card">
+        <h2>Create Wallet</h2>
+        <label>Email<input id="signup-email" placeholder="you@domain.com" /></label>
+        <button id="btn-signup">Generate Passphrase</button>
+        <pre id="signup-output"></pre>
+        <div class="row">
+          <button id="btn-copy-passphrase">Copy Passphrase</button>
+          <button id="btn-go-login" class="ghost">Go Login</button>
+        </div>
       </section>
 
-      <section class="card">
-        <h2>Transfer</h2>
-        <label>From<input id="tx-from" value="kvp:wallet:demo" /></label>
+      <section id="login-screen" class="card hidden">
+        <h2>Login</h2>
+        <label>Email<input id="login-email" placeholder="you@domain.com" /></label>
+        <label>Passphrase<input id="login-passphrase" placeholder="enter passphrase" /></label>
+        <button id="btn-login">Login Wallet</button>
+        <pre id="login-output"></pre>
+      </section>
+
+      <section id="dashboard-screen" class="card hidden">
+        <h2>Wallet Dashboard</h2>
+        <p id="active-user" class="muted"></p>
+
+        <label>Address<input id="wallet-address" value="" /></label>
+        <button id="btn-load-wallet">Load Wallet</button>
+        <pre id="wallet-output"></pre>
+
+        <h3>Transfer</h3>
+        <label>From<input id="tx-from" value="" /></label>
         <label>To<input id="tx-to" value="kvp:wallet:destination" /></label>
         <label>Asset
           <select id="tx-asset">
@@ -38,6 +57,8 @@
         <label>Amount<input id="tx-amount" value="10" /></label>
         <button id="btn-transfer">Submit Transfer</button>
         <pre id="transfer-output"></pre>
+
+        <button id="btn-logout" class="ghost">Logout</button>
       </section>
     </main>
 
