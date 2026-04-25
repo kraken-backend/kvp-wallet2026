@@ -38,7 +38,18 @@ Buka file:
 
 `D:\upwork\KVP\Codes\WalletKVP2026\frontend\index.html`
 
-Isi `Wallet Backend URL` dengan URL backend Go (default: `http://localhost:8098`).
+Frontend membaca config dari:
+- `frontend/env.js` (runtime config)
+- sumber utamanya dari `.env.local` via script sync
+
+Sync env ke frontend:
+
+```powershell
+cd D:\upwork\KVP\Codes\WalletKVP2026
+powershell -ExecutionPolicy Bypass -File .\sync_env_to_frontend.ps1
+```
+
+Default backend URL akan terisi otomatis dari `WALLET_BACKEND_URL`.
 
 Flow FE:
 - Step 1: Create Wallet (email -> generate passphrase -> copy)
@@ -66,3 +77,10 @@ Yang dijalankan:
 - Tunnel blockchain (`localhost:8090`)
 - Go wallet backend (`localhost:8098`)
 - Tunnel wallet (`localhost:8098`)
+
+## 5) Environment files
+
+- `.env.local` -> local runtime values
+- `.env.local.example` -> template
+- `frontend/env.js` -> generated runtime config for FE
+- `frontend/env.js.example` -> template for FE env

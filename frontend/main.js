@@ -5,6 +5,7 @@ const transferOutput = document.getElementById("transfer-output");
 const signupOutput = document.getElementById("signup-output");
 const loginOutput = document.getElementById("login-output");
 const monitorToggleBtn = document.getElementById("btn-monitor-toggle");
+const cfg = window.__WALLET_CONFIG__ || {};
 
 const signupScreen = document.getElementById("signup-screen");
 const loginScreen = document.getElementById("login-screen");
@@ -59,11 +60,11 @@ function generatePassphrase() {
 const monitors = [
   {
     id: "wallet-public",
-    url: "https://cognitive-wave-fewer-purchase.trycloudflare.com/api/health",
+    url: `${(cfg.WALLET_PUBLIC_TUNNEL_URL || "https://cognitive-wave-fewer-purchase.trycloudflare.com").replace(/\/+$/, "")}/api/health`,
   },
   {
     id: "wallet-local",
-    url: "http://localhost:8098/api/health",
+    url: `${(cfg.WALLET_BACKEND_URL || "http://localhost:8098").replace(/\/+$/, "")}/api/health`,
   },
 ];
 
@@ -117,7 +118,7 @@ function setupMonitorAutoRefresh() {
 }
 
 function backendBase() {
-  return (backendInput.value || "").trim().replace(/\/+$/, "");
+  return (backendInput.value || cfg.WALLET_BACKEND_URL || "http://localhost:8098").trim().replace(/\/+$/, "");
 }
 
 async function callJson(path, options = {}) {
@@ -240,6 +241,7 @@ document.getElementById("btn-transfer").addEventListener("click", async () => {
 });
 
 (function bootstrapFlow() {
+  backendInput.value = cfg.WALLET_BACKEND_URL || backendInput.value || "http://localhost:8098";
   runMonitor();
   setupMonitorAutoRefresh();
   const email = getSessionEmail();
