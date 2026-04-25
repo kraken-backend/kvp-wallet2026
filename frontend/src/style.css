@@ -18,23 +18,38 @@ body {
   background-image: url("/assets/landing-bg.png");
   background-size: cover;
   background-position: center;
-  display: flex;
-  align-items: flex-end;
+  display: grid;
+  align-items: end;
+  overflow: hidden;
+}
+
+.phones {
+  position: absolute;
+  right: clamp(20px, 7vw, 120px);
+  top: clamp(34px, 8vh, 90px);
+  width: min(46vw, 620px);
+  max-width: 620px;
+  min-width: 280px;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .overlay {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, rgba(2, 6, 20, 0.86) 100%);
+  background:
+    radial-gradient(circle at 15% 88%, rgba(57, 81, 255, 0.35), rgba(0, 0, 0, 0) 35%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, rgba(2, 6, 20, 0.78) 100%);
+  z-index: 2;
 }
 
 .content {
   position: relative;
-  z-index: 1;
+  z-index: 3;
   width: 100%;
   max-width: 1100px;
   margin: 0 auto;
-  padding: 0 24px 64px;
+  padding: 0 24px 56px;
   color: #fff;
 }
 
@@ -58,4 +73,81 @@ h1 {
   font-size: clamp(2rem, 7vw, 4.2rem);
   line-height: 1.05;
   font-weight: 700;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  min-width: 164px;
+  height: 46px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.96rem;
+  cursor: pointer;
+  transition: transform 0.16s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  color: #ffffff;
+  background: linear-gradient(90deg, #6c35ff 0%, #9336ff 52%, #b729ff 100%);
+  box-shadow: 0 10px 24px rgba(119, 57, 255, 0.38);
+}
+
+.btn-secondary {
+  color: #f6f2ff;
+  background: rgba(11, 18, 44, 0.68);
+  border-color: rgba(175, 156, 255, 0.38);
+  backdrop-filter: blur(4px);
+}
+
+@media (max-width: 960px) {
+  .phones {
+    right: -46px;
+    top: 72px;
+    width: min(66vw, 420px);
+    opacity: 0.72;
+  }
+}
+
+@media (max-width: 640px) {
+  .content {
+    padding: 0 20px 42px;
+  }
+
+  .logo {
+    width: 78px;
+    height: 78px;
+  }
+
+  .label {
+    letter-spacing: 0.28em;
+  }
+
+  .hero-actions {
+    width: 100%;
+    gap: 10px;
+  }
+
+  .btn {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .phones {
+    right: -88px;
+    top: 100px;
+    width: 95vw;
+    opacity: 0.5;
+  }
 }
