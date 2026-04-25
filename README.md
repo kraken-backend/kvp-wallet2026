@@ -2,7 +2,7 @@
 
 Wallet project khusus KVC dengan:
 - Backend: Go (`backend-go`)
-- Frontend: HTML/CSS/JS ringan (`frontend`)
+- Frontend: Vite + TypeScript (`frontend`)
 - Integrasi: Backend proxy ke KVC API (`KVC_API_BASE`)
 
 ## 1) Backend (Go)
@@ -32,24 +32,35 @@ Endpoints:
 - `GET /api/kvc/wallet/{address}`
 - `POST /api/kvc/transfer`
 
-## 2) Frontend
+## 2) Frontend (Vite + TS)
 
-Buka file:
-
-`D:\upwork\KVP\Codes\WalletKVP2026\frontend\index.html`
-
-Frontend membaca config dari:
-- `frontend/env.js` (runtime config)
-- sumber utamanya dari `.env.local` via script sync
-
-Sync env ke frontend:
+Masuk folder:
 
 ```powershell
-cd D:\upwork\KVP\Codes\WalletKVP2026
-powershell -ExecutionPolicy Bypass -File .\sync_env_to_frontend.ps1
+cd D:\upwork\KVP\Codes\WalletKVP2026\frontend
 ```
 
-Default backend URL akan terisi otomatis dari `WALLET_BACKEND_URL`.
+Install:
+
+```powershell
+npm install
+```
+
+Run dev:
+
+```powershell
+npm run dev
+```
+
+Build:
+
+```powershell
+npm run build
+```
+
+Frontend membaca environment dari Vite:
+- `VITE_WALLET_BACKEND_URL`
+- `VITE_WALLET_PUBLIC_HEALTH_URL`
 
 Flow FE:
 - Step 1: Create Wallet (email -> generate passphrase -> copy)
@@ -82,5 +93,3 @@ Yang dijalankan:
 
 - `.env.local` -> local runtime values
 - `.env.local.example` -> template
-- `frontend/env.js` -> generated runtime config for FE
-- `frontend/env.js.example` -> template for FE env
