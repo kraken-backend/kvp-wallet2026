@@ -13,7 +13,7 @@ type WalletPage =
   | "profile";
 
 type Profile = { email: string; passkey: string; address: string };
-type TxKind = "onchain-send" | "onchain-receive" | "staking" | "minting";
+type TxKind = "onchain-send";
 type TxItem = {
   txHash: string;
   kind: TxKind;
@@ -23,13 +23,31 @@ type TxItem = {
   createdAt: string;
   note: string;
 };
+type WalletResponse = {
+  address: string;
+  nonce: number;
+  balances: Array<{ asset: string; amount: string }>;
+};
+type TransferResponse = {
+  txHash?: string;
+  status?: string;
+  message?: string;
+};
+type AssetCatalogItem = {
+  symbol: string;
+  isNative: boolean;
+  transferable: boolean;
+};
+type AssetCatalogResponse = {
+  network: string;
+  items: AssetCatalogItem[];
+};
 
 const USERS_KEY = "kvp_wallet_simple_users";
 const SESSION_KEY = "kvp_wallet_simple_session";
 const TX_KEY = "kvp_wallet_simple_txs";
-const EXPLORER_BASE =
-  (import.meta.env.VITE_MAIN_EXPLORER_URL as string | undefined) ||
-  "https://kvp2026.vercel.app";
+const EXPLORER_BASE = (import.meta.env.VITE_MAIN_EXPLORER_URL as string | undefined) || "";
+const BACKEND_BASE = (import.meta.env.VITE_WALLET_BACKEND_URL as string | undefined) || "";
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 <main id="landing-screen" class="landing">
@@ -54,7 +72,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 
     <div id="create-view">
       <label>Email
-        <input id="create-email" type="email" placeholder="you@domain.com" />
+        <input id="create-email" type="email" />
       </label>
       <button id="generate-passkey" class="btn btn-primary auth-btn" type="button">Generate Passkey</button>
       <pre id="create-output"></pre>
@@ -64,10 +82,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 
     <div id="login-view" class="hidden">
       <label>Email
-        <input id="login-email" type="email" placeholder="you@domain.com" />
+        <input id="login-email" type="email" />
       </label>
       <label>Passkey
-        <input id="login-passkey" type="text" placeholder="paste your passkey" />
+        <input id="login-passkey" type="text" />
       </label>
       <button id="login-btn" class="btn btn-primary auth-btn" type="button">Login</button>
       <p id="login-output" class="auth-message"></p>
@@ -99,10 +117,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       </div>
       <div class="feature-grid">
         <button data-open-page="crosschain" class="feature-card" type="button">
-          <strong>Transaction Crosschain</strong><span>Send/Receive - Coming Soon</span>
+          <strong>Transaction Crosschain</strong><span>Menunggu endpoint backend</span>
         </button>
         <button data-open-page="bridge" class="feature-card" type="button">
-          <strong>Transaction Bridge</strong><span>Swap Onchain/Crosschain - Coming Soon</span>
+          <strong>Transaction Bridge</strong><span>Menunggu endpoint backend</span>
         </button>
         <button data-open-page="statistics" class="feature-card" type="button">
           <strong>Statistic Transaction</strong><span>Volume, count, status summary</span>
@@ -117,8 +135,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <div class="panel-grid">
         <article class="panel-card">
           <h3>Send (Onchain)</h3>
-          <label>To Address <input id="onchain-send-to" placeholder="kvp:wallet:destination" /></label>
-          <label>Amount <input id="onchain-send-amount" value="10" /></label>
+          <label>To Address <input id="onchain-send-to" /></label>
+          <label>Asset
+            <select id="onchain-asset-select"></select>
+          </label>
+          <label>Amount <input id="onchain-send-amount" /></label>
           <button id="btn-onchain-send" class="btn btn-primary auth-btn" type="button">Submit Send</button>
         </article>
         <article class="panel-card">
@@ -133,7 +154,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <div id="wallet-staking-page" class="wallet-page hidden">
       <article class="panel-card">
         <h3>Staking</h3>
-        <label>Amount tKVC <input id="stake-amount" value="25" /></label>
+        <label>Asset
+          <select id="stake-asset-select"></select>
+        </label>
+        <label>Amount <input id="stake-amount" /></label>
         <button id="btn-stake" class="btn btn-primary auth-btn" type="button">Submit Staking</button>
       </article>
       <p id="staking-note" class="auth-message"></p>
@@ -142,8 +166,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <div id="wallet-minting-page" class="wallet-page hidden">
       <article class="panel-card">
         <h3>Minting</h3>
-        <label>Token Symbol <input id="mint-symbol" value="KRT" /></label>
-        <label>Amount <input id="mint-amount" value="1000" /></label>
+        <label>Token / Coin
+          <select id="mint-asset-select"></select>
+        </label>
+        <label>Amount <input id="mint-amount" /></label>
         <button id="btn-mint" class="btn btn-primary auth-btn" type="button">Submit Minting</button>
       </article>
       <p id="minting-note" class="auth-message"></p>
@@ -152,14 +178,14 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <div id="wallet-crosschain-page" class="wallet-page hidden">
       <article class="panel-card coming-card">
         <h3>Transaction Crosschain</h3>
-        <p>Send/Receive crosschain is <strong>Coming Soon</strong> for KVC wallet.</p>
+        <p>Fitur ini belum bisa dijalankan karena endpoint backend belum tersedia.</p>
       </article>
     </div>
 
     <div id="wallet-bridge-page" class="wallet-page hidden">
       <article class="panel-card coming-card">
         <h3>Transaction Bridge</h3>
-        <p>Swap Onchain and Swap Crosschain are <strong>Coming Soon</strong>.</p>
+        <p>Fitur ini belum bisa dijalankan karena endpoint backend belum tersedia.</p>
       </article>
     </div>
 
@@ -186,11 +212,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <div id="wallet-notifications-page" class="wallet-page hidden">
       <article class="panel-card">
         <h3>Notifications</h3>
-        <ul class="notice-list">
-          <li>Wallet login activity detected.</li>
-          <li>Latest onchain transaction confirmed.</li>
-          <li>New staking campaign will open soon.</li>
-        </ul>
+        <p class="muted-line">Tidak ada endpoint notifikasi dari backend.</p>
       </article>
     </div>
 
@@ -226,6 +248,7 @@ const quickPageButtons = Array.from(
   document.querySelectorAll<HTMLButtonElement>("[data-open-page]")
 );
 let selectedTxHash = "";
+let assetCatalog: AssetCatalogItem[] = [];
 
 function users(): Profile[] {
   try {
@@ -261,6 +284,24 @@ function clearSession() {
 
 function sessionEmail() {
   return (localStorage.getItem(SESSION_KEY) || "").trim().toLowerCase();
+}
+
+async function getJson<T>(path: string): Promise<T> {
+  if (!BACKEND_BASE) throw new Error("VITE_WALLET_BACKEND_URL is not configured");
+  const response = await fetch(`${BACKEND_BASE}${path}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json() as Promise<T>;
+}
+
+async function postJson<T>(path: string, payload: unknown): Promise<T> {
+  if (!BACKEND_BASE) throw new Error("VITE_WALLET_BACKEND_URL is not configured");
+  const response = await fetch(`${BACKEND_BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json() as Promise<T>;
 }
 
 function generatePasskey() {
@@ -446,19 +487,58 @@ function renderStatistics() {
   )} tKVC`;
 }
 
-function ensureInitialTxSeed() {
-  if (txs().length > 0) return;
-  saveTxs([
-    {
-      txHash: generateTxHash(),
-      kind: "onchain-receive",
-      status: "success",
-      amount: "100",
-      asset: "tKVC",
-      createdAt: new Date().toISOString(),
-      note: "Initial wallet funding",
-    },
-  ]);
+async function refreshWalletState(address: string) {
+  const noteEl = document.querySelector<HTMLElement>("#wallet-main-note")!;
+  const onchainNote = document.querySelector<HTMLElement>("#onchain-note")!;
+  await loadAssetCatalog();
+
+  try {
+    const wallet = await getJson<WalletResponse>(`/api/kvc/wallet/${encodeURIComponent(address)}`);
+    const primaryBalance = wallet.balances.find((item) => item.asset === "tKVC") || wallet.balances[0];
+    document.querySelector<HTMLElement>("#wallet-balance-main")!.textContent = primaryBalance
+      ? `${primaryBalance.amount} ${primaryBalance.asset}`
+      : "0";
+    noteEl.textContent = "";
+    onchainNote.textContent = "";
+  } catch (error) {
+    const msg = (error as Error).message;
+    document.querySelector<HTMLElement>("#wallet-balance-main")!.textContent = "N/A";
+    noteEl.textContent = `Gagal load wallet dari backend: ${msg}`;
+  }
+}
+
+function renderAssetSelect(selectId: string, preferredSymbol = "tKVC") {
+  const select = document.querySelector<HTMLSelectElement>(`#${selectId}`);
+  if (!select) return;
+  if (!assetCatalog.length) {
+    select.innerHTML = "";
+    return;
+  }
+  select.innerHTML = assetCatalog
+    .map((item) => `<option value="${item.symbol}">${item.symbol}${item.transferable ? "" : " (locked)"}</option>`)
+    .join("");
+  const preferred =
+    assetCatalog.find((item) => item.symbol === preferredSymbol && item.transferable) ||
+    assetCatalog.find((item) => item.transferable) ||
+    assetCatalog[0];
+  select.value = preferred.symbol;
+}
+
+async function loadAssetCatalog() {
+  const noteEl = document.querySelector<HTMLElement>("#wallet-main-note")!;
+  try {
+    const payload = await getJson<AssetCatalogResponse>("/api/kvc/assets");
+    assetCatalog = payload.items || [];
+    renderAssetSelect("onchain-asset-select");
+    renderAssetSelect("stake-asset-select");
+    renderAssetSelect("mint-asset-select");
+  } catch (error) {
+    assetCatalog = [];
+    renderAssetSelect("onchain-asset-select");
+    renderAssetSelect("stake-asset-select");
+    renderAssetSelect("mint-asset-select");
+    noteEl.textContent = `Gagal load asset catalog dari backend: ${(error as Error).message}`;
+  }
 }
 
 document.querySelector<HTMLButtonElement>("#open-create")!.addEventListener("click", showCreate);
@@ -509,8 +589,8 @@ document.querySelector<HTMLButtonElement>("#login-btn")!.addEventListener("click
   }
   setSession(found.email);
   out.textContent = "";
-  ensureInitialTxSeed();
   showWalletMain(found);
+  void refreshWalletState(found.address);
 });
 
 document.querySelector<HTMLButtonElement>("#wallet-logout")!.addEventListener("click", () => {
@@ -525,10 +605,21 @@ document.querySelector<HTMLButtonElement>("#copy-address")!.addEventListener("cl
   document.querySelector<HTMLElement>("#wallet-main-note")!.textContent = "Address copied.";
 });
 
-document.querySelector<HTMLButtonElement>("#btn-onchain-send")!.addEventListener("click", () => {
+document.querySelector<HTMLButtonElement>("#btn-onchain-send")!.addEventListener("click", async () => {
   const to = (document.querySelector<HTMLInputElement>("#onchain-send-to")!.value || "").trim();
   const amount = (document.querySelector<HTMLInputElement>("#onchain-send-amount")!.value || "").trim();
+  const asset = (document.querySelector<HTMLSelectElement>("#onchain-asset-select")!.value || "").trim();
   const note = document.querySelector<HTMLElement>("#onchain-note")!;
+  const from = (document.querySelector<HTMLInputElement>("#wallet-main-address")!.value || "").trim();
+  const selectedAsset = assetCatalog.find((item) => item.symbol === asset);
+  if (!selectedAsset) {
+    note.textContent = "Asset tidak ditemukan di catalog backend.";
+    return;
+  }
+  if (!selectedAsset.transferable) {
+    note.textContent = `Asset ${selectedAsset.symbol} masih locked dan belum bisa ditransaksikan.`;
+    return;
+  }
   if (!to.startsWith("kvp:wallet:")) {
     note.textContent = "Destination must use kvp:wallet: format.";
     return;
@@ -537,35 +628,56 @@ document.querySelector<HTMLButtonElement>("#btn-onchain-send")!.addEventListener
     note.textContent = "Amount must be greater than 0.";
     return;
   }
-  const tx = addTx("onchain-send", amount, "tKVC", `Send to ${to}`);
-  note.textContent = `Send submitted. TxHash: ${tx.txHash.slice(0, 18)}...`;
+  try {
+    const result = await postJson<TransferResponse>("/api/kvc/transfer", {
+      from,
+      to,
+      asset: selectedAsset.symbol,
+      amount,
+    });
+    if (!result.txHash) {
+      note.textContent = "Transfer response tidak mengandung txHash.";
+      return;
+    }
+    const tx = addTx("onchain-send", amount, selectedAsset.symbol, `Send to ${to}`);
+    tx.txHash = result.txHash;
+    tx.status = (result.status === "success" ? "success" : "pending");
+    const updated = txs();
+    updated[0] = tx;
+    saveTxs(updated);
+    renderHistory();
+    renderStatistics();
+    note.textContent = `Send submitted. TxHash: ${result.txHash.slice(0, 18)}...`;
+    await refreshWalletState(from);
+  } catch (error) {
+    note.textContent = `Transfer gagal dari backend: ${(error as Error).message}`;
+  }
 });
 
 document.querySelector<HTMLButtonElement>("#btn-stake")!.addEventListener("click", () => {
-  const amount = (document.querySelector<HTMLInputElement>("#stake-amount")!.value || "").trim();
+  const asset = (document.querySelector<HTMLSelectElement>("#stake-asset-select")!.value || "").trim();
   const note = document.querySelector<HTMLElement>("#staking-note")!;
-  if (!Number(amount) || Number(amount) <= 0) {
-    note.textContent = "Staking amount must be greater than 0.";
+  const selectedAsset = assetCatalog.find((item) => item.symbol === asset);
+  if (!selectedAsset) {
+    note.textContent = "Asset tidak ditemukan di catalog backend.";
     return;
   }
-  const tx = addTx("staking", amount, "tKVC", "Staking transaction");
-  note.textContent = `Staking submitted. TxHash: ${tx.txHash.slice(0, 18)}...`;
+  note.textContent = `Endpoint staking belum tersedia di backend (asset terpilih: ${selectedAsset.symbol}).`;
 });
 
 document.querySelector<HTMLButtonElement>("#btn-mint")!.addEventListener("click", () => {
-  const symbol = (document.querySelector<HTMLInputElement>("#mint-symbol")!.value || "").trim();
+  const symbol = (document.querySelector<HTMLSelectElement>("#mint-asset-select")!.value || "").trim();
   const amount = (document.querySelector<HTMLInputElement>("#mint-amount")!.value || "").trim();
   const note = document.querySelector<HTMLElement>("#minting-note")!;
   if (!symbol) {
-    note.textContent = "Token symbol is required.";
+    note.textContent = "Asset tidak ditemukan di catalog backend.";
     return;
   }
   if (!Number(amount) || Number(amount) <= 0) {
-    note.textContent = "Minting amount must be greater than 0.";
+    note.textContent = "Amount must be greater than 0.";
     return;
   }
-  const tx = addTx("minting", amount, symbol.toUpperCase(), `Mint ${symbol.toUpperCase()}`);
-  note.textContent = `Minting submitted. TxHash: ${tx.txHash.slice(0, 18)}...`;
+  note.textContent = `Endpoint minting belum tersedia di backend (asset terpilih: ${symbol}).`;
 });
 
 for (const button of quickPageButtons) {
@@ -587,6 +699,6 @@ for (const button of quickPageButtons) {
     showLanding();
     return;
   }
-  ensureInitialTxSeed();
   showWalletMain(profile);
+  void refreshWalletState(profile.address);
 })();

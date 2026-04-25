@@ -45,6 +45,15 @@ func main() {
 		writeRawJSON(w, code, body)
 	})
 
+	mux.HandleFunc("GET /api/kvc/assets", func(w http.ResponseWriter, r *http.Request) {
+		body, code, err := proxyRequest(http.MethodGet, fmt.Sprintf("%s/gateway/assets?mode=api", kvcBase), nil)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+			return
+		}
+		writeRawJSON(w, code, body)
+	})
+
 	mux.HandleFunc("GET /api/kvc/wallet/", func(w http.ResponseWriter, r *http.Request) {
 		address := strings.TrimPrefix(r.URL.Path, "/api/kvc/wallet/")
 		address = strings.TrimSpace(address)
