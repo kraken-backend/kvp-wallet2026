@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KVC Wallet KVP2026</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>KVC Wallet</h1>
+      <p class="muted">Frontend -> Wallet Backend Go -> KVC Node</p>
+
+      <section class="card">
+        <h2>Connection</h2>
+        <label>Wallet Backend URL<input id="backend-url" value="http://localhost:8098" /></label>
+        <button id="btn-health">Check Backend Health</button>
+        <pre id="health-output"></pre>
+      </section>
+
+      <section class="card">
+        <h2>Wallet Lookup</h2>
+        <label>Address<input id="wallet-address" value="kvp:wallet:demo" /></label>
+        <button id="btn-load-wallet">Load Wallet</button>
+        <pre id="wallet-output"></pre>
+      </section>
+
+      <section class="card">
+        <h2>Transfer</h2>
+        <label>From<input id="tx-from" value="kvp:wallet:demo" /></label>
+        <label>To<input id="tx-to" value="kvp:wallet:destination" /></label>
+        <label>Asset
+          <select id="tx-asset">
+            <option value="tKVC">tKVC</option>
+            <option value="KVC">KVC</option>
+          </select>
+        </label>
+        <label>Amount<input id="tx-amount" value="10" /></label>
+        <button id="btn-transfer">Submit Transfer</button>
+        <pre id="transfer-output"></pre>
+      </section>
+    </main>
+
+    <script src="./main.js"></script>
+  </body>
+</html>
