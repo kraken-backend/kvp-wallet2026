@@ -409,7 +409,7 @@ function generateTxHash() {
 }
 
 function explorerTxUrl(hash: string) {
-  return `${EXPLORER_BASE}/?search=${encodeURIComponent(hash)}`;
+  return `${EXPLORER_BASE}/?tx=${encodeURIComponent(hash)}`;
 }
 
 function addTx(kind: TxKind, amount: string, asset: string, note: string) {
