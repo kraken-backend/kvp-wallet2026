@@ -74,6 +74,8 @@ function normalizeBackendBase(raw: string): string {
   // Allow common misconfiguration where health endpoint is used as base URL.
   if (value.endsWith("/api/health")) return value.slice(0, -"/api/health".length);
   if (value.endsWith("/health")) return value.slice(0, -"/health".length);
+  // Allow base values ending with /api (we append /api/... in request paths).
+  if (value.endsWith("/api")) return value.slice(0, -"/api".length);
   return value;
 }
 
