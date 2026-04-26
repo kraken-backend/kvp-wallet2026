@@ -136,7 +136,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <div class="hero-actions">
       <button id="open-create" class="btn btn-primary" type="button">Create Wallet</button>
       <button id="open-login" class="btn btn-secondary" type="button">Sign In</button>
-      <a href="${MAIN_EXPLORER_URL}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" type="button">Blockchain</a>
+      <button id="open-blockchain" class="btn btn-primary" type="button">Blockchain</button>
     </div>
   </section>
 </main>
@@ -719,6 +719,9 @@ async function loadAssetCatalog() {
 
 document.querySelector<HTMLButtonElement>("#open-create")!.addEventListener("click", showCreate);
 document.querySelector<HTMLButtonElement>("#open-login")!.addEventListener("click", showLogin);
+document.querySelector<HTMLButtonElement>("#open-blockchain")!.addEventListener("click", () => {
+  window.open(MAIN_EXPLORER_URL, "_blank");
+});
 document.querySelector<HTMLButtonElement>("#back-landing")!.addEventListener("click", showLanding);
 document.querySelector<HTMLButtonElement>("#switch-login")!.addEventListener("click", showLogin);
 document.querySelector<HTMLButtonElement>("#switch-create")!.addEventListener("click", showCreate);
