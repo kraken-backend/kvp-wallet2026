@@ -62,6 +62,37 @@ type AddAccountResponse = {
   address: string;
   label: string;
 };
+type BurnResponse = {
+  status: string;
+  asset: string;
+  amount: string;
+  from: string;
+  txHash: string;
+  note: string;
+};
+type MintResponse = {
+  status: string;
+  asset: string;
+  amount: string;
+  to: string;
+  txHash: string;
+  note: string;
+};
+type ActivityItem = {
+  txHash: string;
+  txType: string;
+  from: string;
+  to: string;
+  asset: string;
+  amount: string;
+  timestampUnix: number;
+  status: string;
+};
+type ActivityResponse = {
+  sessionId: string;
+  activityCount: number;
+  items: ActivityItem[];
+};
 type SessionStatusResponse = {
   sessionId: string;
   userId: string;
@@ -216,7 +247,16 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <label>Amount <input id="mint-amount" /></label>
         <button id="btn-mint" class="btn btn-primary auth-btn" type="button">Submit Minting</button>
       </article>
+      <article class="panel-card">
+        <h3>Burning</h3>
+        <label>Token / Coin
+          <select id="burn-asset-select"></select>
+        </label>
+        <label>Amount <input id="burn-amount" /></label>
+        <button id="btn-burn" class="btn btn-primary auth-btn" type="button">Submit Burning</button>
+      </article>
       <p id="minting-note" class="auth-message"></p>
+      <p id="burning-note" class="auth-message"></p>
     </div>
 
     <div id="wallet-crosschain-page" class="wallet-page hidden">
@@ -540,6 +580,25 @@ function addTx(kind: TxKind, amount: string, asset: string, note: string) {
   return record;
 }
 
+function mapActivityToTx(items: ActivityItem[]): TxItem[] {
+  return items.map((item) => ({
+    txHash: item.txHash,
+    kind: "onchain-send",
+    status: item.status === "success" ? "success" : "pending",
+    amount: item.amount,
+    asset: item.asset,
+    createdAt: new Date((item.timestampUnix || 0) * 1000).toISOString(),
+    note: `${item.txType}: ${item.from} -> ${item.to}`,
+  }));
+}
+
+async function syncActivityFromBackend(sessionId: string) {
+  const payload = await getJson<ActivityResponse>(`/api/activity/session/${encodeURIComponent(sessionId)}`);
+  saveTxs(mapActivityToTx(payload.items || []));
+  renderHistory();
+  renderStatistics();
+}
+
 function renderHistory() {
   const list = document.querySelector<HTMLElement>("#history-list")!;
   const records = txs();
@@ -642,11 +701,13 @@ async function loadAssetCatalog() {
     renderAssetSelect("onchain-asset-select");
     renderAssetSelect("stake-asset-select");
     renderAssetSelect("mint-asset-select");
+    renderAssetSelect("burn-asset-select");
   } catch (error) {
     assetCatalog = [];
     renderAssetSelect("onchain-asset-select");
     renderAssetSelect("stake-asset-select");
     renderAssetSelect("mint-asset-select");
+    renderAssetSelect("burn-asset-select");
     noteEl.textContent = `Gagal load asset catalog dari backend: ${(error as Error).message}`;
   }
 }
@@ -736,6 +797,7 @@ document.querySelector<HTMLButtonElement>("#login-btn")!.addEventListener("click
     out.textContent = "";
     showWalletMain(profile);
     void refreshWalletState(profile.address);
+    void syncActivityFromBackend(auth.sessionId);
   } catch (error) {
     out.textContent = `Login failed: ${(error as Error).message}`;
   }
@@ -843,6 +905,10 @@ document.querySelector<HTMLButtonElement>("#btn-onchain-send")!.addEventListener
     renderStatistics();
     note.textContent = `Send submitted. TxHash: ${result.txHash.slice(0, 18)}...`;
     await refreshWalletState(from);
+    const active = sessionData();
+    if (active) {
+      await syncActivityFromBackend(active.sessionId);
+    }
   } catch (error) {
     note.textContent = `Transfer gagal dari backend: ${(error as Error).message}`;
   }
@@ -877,12 +943,13 @@ document.querySelector<HTMLButtonElement>("#btn-mint")!.addEventListener("click"
     return;
   }
   try {
-    const result = await postJson<{ status: string; note: string }>("/api/minting/request", {
+    const result = await postJson<MintResponse>("/api/minting/request", {
       sessionId: session.sessionId,
       asset: symbol,
       amount,
     });
-    note.textContent = `${result.status}: ${result.note}`;
+    note.textContent = `${result.status}: ${result.note} (tx: ${result.txHash})`;
+    await syncActivityFromBackend(session.sessionId);
   } catch (error) {
     const message = (error as Error).message;
     if (isSessionErrorMessage(message)) {
@@ -894,6 +961,45 @@ document.querySelector<HTMLButtonElement>("#btn-mint")!.addEventListener("click"
       return;
     }
     note.textContent = `Minting request failed: ${message}`;
+  }
+});
+
+document.querySelector<HTMLButtonElement>("#btn-burn")!.addEventListener("click", async () => {
+  const symbol = (document.querySelector<HTMLSelectElement>("#burn-asset-select")!.value || "").trim();
+  const amount = (document.querySelector<HTMLInputElement>("#burn-amount")!.value || "").trim();
+  const note = document.querySelector<HTMLElement>("#burning-note")!;
+  if (!symbol) {
+    note.textContent = "Asset tidak ditemukan di catalog backend.";
+    return;
+  }
+  if (!Number(amount) || Number(amount) <= 0) {
+    note.textContent = "Amount must be greater than 0.";
+    return;
+  }
+  const session = sessionData();
+  if (!session) {
+    note.textContent = "Session not found. Login again.";
+    return;
+  }
+  try {
+    const result = await postJson<BurnResponse>("/api/burning/request", {
+      sessionId: session.sessionId,
+      asset: symbol,
+      amount,
+    });
+    note.textContent = `${result.status}: ${result.note} (tx: ${result.txHash})`;
+    await syncActivityFromBackend(session.sessionId);
+  } catch (error) {
+    const message = (error as Error).message;
+    if (isSessionErrorMessage(message)) {
+      redirectToLoginForSession(
+        { email: session.email, passkey: session.passkey },
+        "Session expired/invalid while burning. Please login again."
+      );
+      note.textContent = "";
+      return;
+    }
+    note.textContent = `Burning request failed: ${message}`;
   }
 });
 
@@ -957,6 +1063,7 @@ for (const button of quickPageButtons) {
       }
       showWalletMain(profile);
       await refreshWalletState(profile.address);
+      await syncActivityFromBackend(active.sessionId);
     } catch {
       clearSession();
       showLanding();

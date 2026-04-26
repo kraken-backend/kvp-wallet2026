@@ -26,6 +26,7 @@ type app struct {
 	kvcBase      string
 	db           *sql.DB
 	mintTreasury string
+	burnSink     string
 }
 
 type authRequest struct {
@@ -63,6 +64,12 @@ type mintRequest struct {
 	Amount    string `json:"amount"`
 }
 
+type burnRequest struct {
+	SessionID string `json:"sessionId"`
+	Asset     string `json:"asset"`
+	Amount    string `json:"amount"`
+}
+
 type walletPolicyResponse struct {
 	Active struct {
 		PolicyHash         string `json:"policyHash"`
@@ -71,6 +78,31 @@ type walletPolicyResponse struct {
 		BurnEnabled        bool   `json:"burnEnabled"`
 		KVCTransferEnabled bool   `json:"kvcTransferEnabled"`
 	} `json:"active"`
+}
+
+func defaultWalletPolicy() walletPolicyResponse {
+	var p walletPolicyResponse
+	p.Active.PolicyHash = "policy:unknown"
+	p.Active.Stage = "bootstrap-open"
+	p.Active.MintEnabled = true
+	p.Active.BurnEnabled = true
+	p.Active.KVCTransferEnabled = true
+	return p
+}
+
+func (a *app) fetchWalletPolicy() (walletPolicyResponse, string) {
+	body, code, err := proxyRequest(http.MethodGet, fmt.Sprintf("%s/gateway/policy/active?mode=api", a.kvcBase), nil)
+	if err != nil {
+		return defaultWalletPolicy(), err.Error()
+	}
+	if code != http.StatusOK {
+		return defaultWalletPolicy(), fmt.Sprintf("policy endpoint returned %d", code)
+	}
+	var policy walletPolicyResponse
+	if err := json.Unmarshal(body, &policy); err != nil {
+		return defaultWalletPolicy(), "invalid policy payload"
+	}
+	return policy, ""
 }
 
 type transferPayload struct {
@@ -83,6 +115,27 @@ type transferPayload struct {
 type transferResult struct {
 	TxHash string `json:"txHash"`
 	Status string `json:"status"`
+	Message string `json:"message"`
+}
+
+type recentTx struct {
+	TxHash        string `json:"txHash"`
+	TxType        string `json:"txType"`
+	From          string `json:"from"`
+	To            string `json:"to"`
+	Asset         string `json:"asset"`
+	Amount        string `json:"amount"`
+	TimestampUnix uint64 `json:"timestampUnix"`
+	Status        string `json:"status"`
+}
+
+type sessionEvent struct {
+	EventID   int64  `json:"eventId"`
+	SessionID string `json:"sessionId"`
+	UserID    string `json:"userId"`
+	EventType string `json:"eventType"`
+	Detail    string `json:"detail"`
+	CreatedAt string `json:"createdAt"`
 }
 
 func sessionIdleTimeout() time.Duration {
@@ -115,6 +168,7 @@ func main() {
 		kvcBase:      kvcBase,
 		db:           db,
 		mintTreasury: getenv("WALLET_MINT_TREASURY_ADDRESS", "kvp:demo:user1"),
+		burnSink:     getenv("WALLET_BURN_SINK_ADDRESS", "kvp:burn:sink"),
 	}
 
 	mux := http.NewServeMux()
@@ -130,11 +184,14 @@ func main() {
 	mux.HandleFunc("POST /api/auth/signup", a.signup)
 	mux.HandleFunc("POST /api/auth/login", a.login)
 	mux.HandleFunc("GET /api/auth/session/", a.getSession)
+	mux.HandleFunc("GET /api/auth/session/events/", a.getSessionEvents)
 	mux.HandleFunc("GET /api/auth/me", a.me)
 	mux.HandleFunc("POST /api/auth/account/add", a.addAccount)
 	mux.HandleFunc("POST /api/auth/credential/register", a.registerCredential)
 	mux.HandleFunc("GET /api/minting/policy", a.mintingPolicy)
 	mux.HandleFunc("POST /api/minting/request", a.mintingRequest)
+	mux.HandleFunc("POST /api/burning/request", a.burningRequest)
+	mux.HandleFunc("GET /api/activity/session/", a.activityBySession)
 
 	mux.HandleFunc("GET /api/kvc/status", func(w http.ResponseWriter, r *http.Request) {
 		body, code, err := proxyRequest(http.MethodGet, fmt.Sprintf("%s/gateway/status?mode=api", a.kvcBase), nil)
@@ -200,6 +257,7 @@ func runMigrations(db *sql.DB) error {
 		`create table if not exists wallet_auth (user_id text primary key references users(user_id) on delete cascade, pass_hash text not null)`,
 		`create table if not exists wallet_accounts (wallet_account_id text primary key,user_id text not null references users(user_id) on delete cascade,address text not null,label text,created_at timestamptz not null default current_timestamp)`,
 		`create table if not exists sessions (session_id text primary key,user_id text not null references users(user_id) on delete cascade,token_hash text not null,expires_at timestamptz not null,created_at timestamptz not null default current_timestamp)`,
+		`create table if not exists session_events (event_id integer primary key autoincrement,session_id text not null,user_id text not null,event_type text not null,detail text,created_at timestamptz not null default current_timestamp)`,
 		`create table if not exists webauthn_credentials (credential_id text primary key,user_id text not null references users(user_id) on delete cascade,public_key text not null,created_at timestamptz not null default current_timestamp)`,
 	}
 	for _, stmt := range stmts {
@@ -208,6 +266,19 @@ func runMigrations(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+func (a *app) recordSessionEvent(sessionID, userID, eventType, detail string) {
+	_, err := a.db.Exec(
+		`insert into session_events(session_id,user_id,event_type,detail) values(?,?,?,?)`,
+		sessionID,
+		userID,
+		eventType,
+		detail,
+	)
+	if err != nil {
+		log.Printf("session event insert failed: %v", err)
+	}
 }
 
 func (a *app) signup(w http.ResponseWriter, r *http.Request) {
@@ -248,6 +319,7 @@ func (a *app) signup(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to create session"})
 		return
 	}
+	a.recordSessionEvent(sessionID, userID, "created", "signup")
 	if err := tx.Commit(); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to commit"})
 		return
@@ -307,6 +379,7 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "session create failure"})
 		return
 	}
+	a.recordSessionEvent(sessionID, userID, "created", "login")
 	writeJSON(w, http.StatusOK, authResponse{
 		Status:        "authenticated",
 		UserID:        userID,
@@ -348,6 +421,31 @@ func (a *app) getSession(w http.ResponseWriter, r *http.Request) {
 		"status":    status,
 		"expiresAt": expires,
 	})
+}
+
+func (a *app) getSessionEvents(w http.ResponseWriter, r *http.Request) {
+	sessionID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/auth/session/events/"))
+	if sessionID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "session id required"})
+		return
+	}
+	rows, err := a.db.Query(
+		`select event_id, session_id, user_id, event_type, coalesce(detail,''), coalesce(created_at,'') from session_events where session_id=? order by event_id desc limit 100`,
+		sessionID,
+	)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "session events query failure"})
+		return
+	}
+	defer rows.Close()
+	events := []sessionEvent{}
+	for rows.Next() {
+		var e sessionEvent
+		if rows.Scan(&e.EventID, &e.SessionID, &e.UserID, &e.EventType, &e.Detail, &e.CreatedAt) == nil {
+			events = append(events, e)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessionId": sessionID, "events": events})
 }
 
 func (a *app) me(w http.ResponseWriter, r *http.Request) {
@@ -397,13 +495,16 @@ func (a *app) requireSession(sessionID string) (string, error) {
 	var expiresRaw string
 	err := a.db.QueryRow(`select user_id, expires_at from sessions where session_id=?`, sessionID).Scan(&userID, &expiresRaw)
 	if err != nil {
+		a.recordSessionEvent(sessionID, "", "invalid", "session lookup failed")
 		return "", errors.New("invalid session")
 	}
 	expires, err := parseSessionExpiry(expiresRaw)
 	if err != nil {
+		a.recordSessionEvent(sessionID, userID, "invalid", "expiry parse failed")
 		return "", errors.New("invalid session")
 	}
 	if time.Now().UTC().After(expires) {
+		a.recordSessionEvent(sessionID, userID, "expired", "idle timeout reached")
 		return "", errors.New("session expired")
 	}
 	// Sliding session: keep session alive while there is valid activity.
@@ -411,6 +512,7 @@ func (a *app) requireSession(sessionID string) (string, error) {
 	if _, err := a.db.Exec(`update sessions set expires_at=? where session_id=? and user_id=?`, renewedExpiry, sessionID, userID); err != nil {
 		return "", errors.New("session refresh failed")
 	}
+	a.recordSessionEvent(sessionID, userID, "renewed", "valid activity")
 	return userID, nil
 }
 
@@ -486,20 +588,7 @@ func (a *app) registerCredential(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) mintingPolicy(w http.ResponseWriter, r *http.Request) {
-	body, code, err := proxyRequest(http.MethodGet, fmt.Sprintf("%s/gateway/policy/active?mode=api", a.kvcBase), nil)
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
-		return
-	}
-	if code != http.StatusOK {
-		writeRawJSON(w, code, body)
-		return
-	}
-	var policy walletPolicyResponse
-	if err := json.Unmarshal(body, &policy); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]any{"error": "invalid policy payload"})
-		return
-	}
+	policy, warning := a.fetchWalletPolicy()
 	status := "disabled"
 	note := "Minting is disabled by active chain policy."
 	if policy.Active.MintEnabled {
@@ -515,6 +604,7 @@ func (a *app) mintingPolicy(w http.ResponseWriter, r *http.Request) {
 		"apiReady":    true,
 		"chainReady":  true,
 		"note":        note,
+		"warning":     warning,
 	})
 }
 
@@ -554,6 +644,17 @@ func (a *app) mintingRequest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "wallet account not found"})
 		return
 	}
+	policyEnforced := strings.EqualFold(getenv("WALLET_POLICY_ENFORCEMENT", "false"), "true")
+	policy, policyWarning := a.fetchWalletPolicy()
+	if policyEnforced && !policy.Active.MintEnabled {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":      "minting disabled by active policy",
+			"policyHash": policy.Active.PolicyHash,
+			"stage":      policy.Active.Stage,
+		})
+		return
+	}
+
 	payload := transferPayload{
 		From:   a.mintTreasury,
 		To:     targetAddress,
@@ -579,13 +680,152 @@ func (a *app) mintingRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":  tx.Status,
-		"asset":   asset,
-		"amount":  amount,
-		"to":      targetAddress,
-		"txHash":  tx.TxHash,
-		"note":    "Minting executed via onchain treasury transfer.",
-		"treasury": a.mintTreasury,
+		"status":          tx.Status,
+		"asset":           asset,
+		"amount":          amount,
+		"to":              targetAddress,
+		"txHash":          tx.TxHash,
+		"note":            "Minting executed via onchain treasury transfer.",
+		"treasury":        a.mintTreasury,
+		"policyHash":      policy.Active.PolicyHash,
+		"policyStage":     policy.Active.Stage,
+		"mintEnabled":     policy.Active.MintEnabled,
+		"policyEnforced":  policyEnforced,
+		"policyWarning":   policyWarning,
+	})
+}
+
+func (a *app) burningRequest(w http.ResponseWriter, r *http.Request) {
+	var req burnRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid payload"})
+		return
+	}
+	userID, err := a.requireSession(req.SessionID)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": err.Error()})
+		return
+	}
+	assetInput := strings.TrimSpace(req.Asset)
+	if assetInput == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "asset is required"})
+		return
+	}
+	asset := assetInput
+	switch strings.ToLower(assetInput) {
+	case "tkvc":
+		asset = "tKVC"
+	case "kvc":
+		asset = "KVC"
+	}
+	amount := strings.TrimSpace(req.Amount)
+	if amount == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "amount is required"})
+		return
+	}
+	var fromAddress string
+	if err := a.db.QueryRow(
+		`select address from wallet_accounts where user_id=? order by created_at asc limit 1`,
+		userID,
+	).Scan(&fromAddress); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "wallet account not found"})
+		return
+	}
+	policyEnforced := strings.EqualFold(getenv("WALLET_POLICY_ENFORCEMENT", "false"), "true")
+	policy, policyWarning := a.fetchWalletPolicy()
+	if policyEnforced && !policy.Active.BurnEnabled {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":      "burning disabled by active policy",
+			"policyHash": policy.Active.PolicyHash,
+			"stage":      policy.Active.Stage,
+		})
+		return
+	}
+	payload := transferPayload{
+		From:   fromAddress,
+		To:     a.burnSink,
+		Asset:  asset,
+		Amount: amount,
+	}
+	body, code, err := proxyRequest(
+		http.MethodPost,
+		fmt.Sprintf("%s/gateway/tx/simulate-transfer?mode=api", a.kvcBase),
+		payload,
+	)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+		return
+	}
+	if code != http.StatusOK {
+		writeRawJSON(w, code, body)
+		return
+	}
+	var tx transferResult
+	if err := json.Unmarshal(body, &tx); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": "invalid burn tx payload"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":          tx.Status,
+		"asset":           asset,
+		"amount":          amount,
+		"from":            fromAddress,
+		"txHash":          tx.TxHash,
+		"note":            "Burning executed via onchain transfer to burn sink.",
+		"burnSink":        a.burnSink,
+		"policyHash":      policy.Active.PolicyHash,
+		"policyStage":     policy.Active.Stage,
+		"burnEnabled":     policy.Active.BurnEnabled,
+		"policyEnforced":  policyEnforced,
+		"policyWarning":   policyWarning,
+	})
+}
+
+func (a *app) activityBySession(w http.ResponseWriter, r *http.Request) {
+	sessionID := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/api/activity/session/"))
+	userID, err := a.requireSession(sessionID)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": err.Error()})
+		return
+	}
+	rows, err := a.db.Query(`select address from wallet_accounts where user_id=?`, userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "accounts query failure"})
+		return
+	}
+	defer rows.Close()
+	owned := map[string]bool{}
+	for rows.Next() {
+		var addr string
+		if rows.Scan(&addr) == nil {
+			owned[addr] = true
+		}
+	}
+	body, code, err := proxyRequest(http.MethodGet, fmt.Sprintf("%s/gateway/tx/recent?mode=api", a.kvcBase), nil)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+		return
+	}
+	if code != http.StatusOK {
+		writeRawJSON(w, code, body)
+		return
+	}
+	var txs []recentTx
+	if err := json.Unmarshal(body, &txs); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": "invalid tx payload"})
+		return
+	}
+	out := make([]recentTx, 0, len(txs))
+	for _, tx := range txs {
+		if owned[tx.From] || owned[tx.To] {
+			out = append(out, tx)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sessionId":    sessionID,
+		"walletCount":  len(owned),
+		"activityCount": len(out),
+		"items":        out,
 	})
 }
 
