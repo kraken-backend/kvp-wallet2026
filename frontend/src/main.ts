@@ -62,6 +62,12 @@ type AddAccountResponse = {
   address: string;
   label: string;
 };
+type SessionStatusResponse = {
+  sessionId: string;
+  userId: string;
+  status: "active" | "expired";
+  expiresAt: string;
+};
 
 const SESSION_KEY = "kvp_wallet_simple_session";
 const TX_KEY = "kvp_wallet_simple_txs";
@@ -250,7 +256,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <div id="wallet-notifications-page" class="wallet-page hidden">
       <article class="panel-card">
         <h3>Notifications</h3>
-        <p class="muted-line">Tidak ada endpoint notifikasi dari backend.</p>
+        <div id="notifications-list"></div>
       </article>
     </div>
 
@@ -290,6 +296,8 @@ const quickPageButtons = Array.from(
 );
 let selectedTxHash = "";
 let assetCatalog: AssetCatalogItem[] = [];
+let sessionMonitorTimer: number | null = null;
+const notifications: string[] = [];
 
 function txs(): TxItem[] {
   try {
@@ -314,6 +322,52 @@ function clearSession() {
 function isSessionErrorMessage(message: string): boolean {
   const text = message.toLowerCase();
   return text.includes("invalid session") || text.includes("session expired") || text.includes("http 401");
+}
+
+function pushNotification(message: string) {
+  const stamped = `[${new Date().toLocaleString()}] ${message}`;
+  notifications.unshift(stamped);
+  if (notifications.length > 20) notifications.length = 20;
+  renderNotifications();
+}
+
+function renderNotifications() {
+  const host = document.querySelector<HTMLElement>("#notifications-list");
+  if (!host) return;
+  if (notifications.length === 0) {
+    host.innerHTML = `<p class="muted-line">No notification yet.</p>`;
+    return;
+  }
+  host.innerHTML = `<ul class="notice-list">${notifications
+    .map((item) => `<li>${item}</li>`)
+    .join("")}</ul>`;
+}
+
+function clearSessionMonitor() {
+  if (sessionMonitorTimer !== null) {
+    window.clearInterval(sessionMonitorTimer);
+    sessionMonitorTimer = null;
+  }
+}
+
+async function syncSessionStatus(sessionId: string): Promise<SessionStatusResponse> {
+  return getJson<SessionStatusResponse>(`/api/auth/session/${encodeURIComponent(sessionId)}`);
+}
+
+function formatExpiryText(raw: string): string {
+  const dt = new Date(raw);
+  if (Number.isNaN(dt.getTime())) return raw;
+  return dt.toLocaleString();
+}
+
+function redirectToLoginForSession(session: { email: string; passkey: string }, message: string) {
+  clearSessionMonitor();
+  clearSession();
+  showLogin();
+  document.querySelector<HTMLInputElement>("#login-email")!.value = session.email || "";
+  document.querySelector<HTMLInputElement>("#login-passkey")!.value = session.passkey || "";
+  document.querySelector<HTMLElement>("#login-output")!.textContent = message;
+  pushNotification(message);
 }
 
 function sessionData(): (AuthResponse & { email: string; passkey: string }) | null {
@@ -414,6 +468,7 @@ function showWalletMain(profile: Profile) {
   openWalletPage("dashboard");
   renderStatistics();
   renderHistory();
+  renderNotifications();
 }
 
 function titleFromPage(page: WalletPage) {
@@ -650,6 +705,34 @@ document.querySelector<HTMLButtonElement>("#login-btn")!.addEventListener("click
       return;
     }
     setSession({ ...auth, email, passkey });
+    const status = await syncSessionStatus(auth.sessionId);
+    if (status.status !== "active") {
+      redirectToLoginForSession({ email, passkey }, "Session is not active. Please login again.");
+      return;
+    }
+    pushNotification(`Session active until ${formatExpiryText(status.expiresAt)}.`);
+    clearSessionMonitor();
+    sessionMonitorTimer = window.setInterval(() => {
+      const current = sessionData();
+      if (!current) return;
+      void syncSessionStatus(current.sessionId)
+        .then((res) => {
+          if (res.status !== "active") {
+            redirectToLoginForSession(
+              { email: current.email, passkey: current.passkey },
+              "Session expired. Please login again."
+            );
+          }
+        })
+        .catch((err) => {
+          if (isSessionErrorMessage((err as Error).message)) {
+            redirectToLoginForSession(
+              { email: current.email, passkey: current.passkey },
+              "Session invalid. Please login again."
+            );
+          }
+        });
+    }, 60_000);
     out.textContent = "";
     showWalletMain(profile);
     void refreshWalletState(profile.address);
@@ -659,6 +742,7 @@ document.querySelector<HTMLButtonElement>("#login-btn")!.addEventListener("click
 });
 
 document.querySelector<HTMLButtonElement>("#wallet-logout")!.addEventListener("click", () => {
+  clearSessionMonitor();
   clearSession();
   showLanding();
 });
@@ -697,12 +781,10 @@ document
     } catch (error) {
       const message = (error as Error).message;
       if (isSessionErrorMessage(message)) {
-        clearSession();
-        showLogin();
-        document.querySelector<HTMLInputElement>("#login-email")!.value = session.email || "";
-        document.querySelector<HTMLInputElement>("#login-passkey")!.value = session.passkey || "";
-        document.querySelector<HTMLElement>("#login-output")!.textContent =
-          "Session expired/invalid. Please login again.";
+        redirectToLoginForSession(
+          { email: session.email, passkey: session.passkey },
+          "Session expired/invalid while adding account. Please login again."
+        );
         note.textContent = "";
         return;
       }
@@ -804,12 +886,10 @@ document.querySelector<HTMLButtonElement>("#btn-mint")!.addEventListener("click"
   } catch (error) {
     const message = (error as Error).message;
     if (isSessionErrorMessage(message)) {
-      clearSession();
-      showLogin();
-      document.querySelector<HTMLInputElement>("#login-email")!.value = session.email || "";
-      document.querySelector<HTMLInputElement>("#login-passkey")!.value = session.passkey || "";
-      document.querySelector<HTMLElement>("#login-output")!.textContent =
-        "Session expired/invalid. Please login again.";
+      redirectToLoginForSession(
+        { email: session.email, passkey: session.passkey },
+        "Session expired/invalid while minting. Please login again."
+      );
       note.textContent = "";
       return;
     }
@@ -845,6 +925,36 @@ for (const button of quickPageButtons) {
         activeAddress: profile.address,
         accounts: me.accounts,
       });
+      try {
+        const status = await syncSessionStatus(active.sessionId);
+        if (status.status === "active") {
+          pushNotification(`Session active until ${formatExpiryText(status.expiresAt)}.`);
+          clearSessionMonitor();
+          sessionMonitorTimer = window.setInterval(() => {
+            const current = sessionData();
+            if (!current) return;
+            void syncSessionStatus(current.sessionId)
+              .then((res) => {
+                if (res.status !== "active") {
+                  redirectToLoginForSession(
+                    { email: current.email, passkey: current.passkey },
+                    "Session expired. Please login again."
+                  );
+                }
+              })
+              .catch((err) => {
+                if (isSessionErrorMessage((err as Error).message)) {
+                  redirectToLoginForSession(
+                    { email: current.email, passkey: current.passkey },
+                    "Session invalid. Please login again."
+                  );
+                }
+              });
+          }, 60_000);
+        }
+      } catch {
+        // Keep bootstrap resilient; auth/me already proved session usability.
+      }
       showWalletMain(profile);
       await refreshWalletState(profile.address);
     } catch {

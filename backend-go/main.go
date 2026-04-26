@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,6 +60,22 @@ type mintRequest struct {
 	SessionID string `json:"sessionId"`
 	Asset     string `json:"asset"`
 	Amount    string `json:"amount"`
+}
+
+func sessionIdleTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("SESSION_IDLE_MINUTES"))
+	if raw == "" {
+		return 60 * time.Minute
+	}
+	minutes, err := strconv.Atoi(raw)
+	if err != nil || minutes <= 0 {
+		return 60 * time.Minute
+	}
+	return time.Duration(minutes) * time.Minute
+}
+
+func nextSessionExpiry() time.Time {
+	return time.Now().UTC().Add(sessionIdleTimeout())
 }
 
 func main() {
@@ -199,7 +216,7 @@ func (a *app) signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessionID := "sess_" + randomID(12)
-	exp := time.Now().UTC().Add(24 * time.Hour)
+	exp := nextSessionExpiry()
 	if _, err := tx.ExecContext(ctx, `insert into sessions(session_id,user_id,token_hash,expires_at) values(?,?,?,?)`, sessionID, userID, hashString(sessionID), exp.Format(time.RFC3339)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to create session"})
 		return
@@ -258,7 +275,7 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessionID := "sess_" + randomID(12)
-	exp := time.Now().UTC().Add(24 * time.Hour)
+	exp := nextSessionExpiry()
 	if _, err := a.db.ExecContext(ctx, `insert into sessions(session_id,user_id,token_hash,expires_at) values(?,?,?,?)`, sessionID, userID, hashString(sessionID), exp.Format(time.RFC3339)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "session create failure"})
 		return
@@ -361,6 +378,11 @@ func (a *app) requireSession(sessionID string) (string, error) {
 	}
 	if time.Now().UTC().After(expires) {
 		return "", errors.New("session expired")
+	}
+	// Sliding session: keep session alive while there is valid activity.
+	renewedExpiry := nextSessionExpiry().Format(time.RFC3339)
+	if _, err := a.db.Exec(`update sessions set expires_at=? where session_id=? and user_id=?`, renewedExpiry, sessionID, userID); err != nil {
+		return "", errors.New("session refresh failed")
 	}
 	return userID, nil
 }
