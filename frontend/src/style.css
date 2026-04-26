@@ -230,6 +230,12 @@ h1 {
   margin-bottom: 14px;
 }
 
+.wallet-main-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .wallet-main-kicker {
   margin: 0 0 4px;
   font-size: 0.76rem;

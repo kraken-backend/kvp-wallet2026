@@ -102,7 +102,8 @@ type SessionStatusResponse = {
 
 const SESSION_KEY = "kvp_wallet_simple_session";
 const TX_KEY = "kvp_wallet_simple_txs";
-const EXPLORER_BASE = (import.meta.env.VITE_MAIN_EXPLORER_URL as string | undefined) || "";
+const MAIN_EXPLORER_URL = (import.meta.env.VITE_MAIN_EXPLORER_URL as string | undefined)?.trim() || "https://krakenum.vercel.app/";
+const EXPLORER_BASE = MAIN_EXPLORER_URL;
 const BACKEND_BASE_RAW = (import.meta.env.VITE_WALLET_BACKEND_URL as string | undefined) || "";
 
 function normalizeBackendBase(raw: string): string {
@@ -135,6 +136,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <div class="hero-actions">
       <button id="open-create" class="btn btn-primary" type="button">Create Wallet</button>
       <button id="open-login" class="btn btn-secondary" type="button">Sign In</button>
+      <a href="${MAIN_EXPLORER_URL}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" type="button">Back to KVP Explorer</a>
     </div>
   </section>
 </main>
@@ -176,7 +178,10 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <p class="wallet-main-kicker">KRAKENUM WALLET</p>
         <h2 id="wallet-main-title">Dashboard</h2>
       </div>
-      <button id="wallet-logout" class="btn btn-secondary wallet-logout-btn" type="button">Logout</button>
+      <div class="wallet-main-actions">
+        <a href="${MAIN_EXPLORER_URL}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary wallet-explorer-link">KVP Explorer</a>
+        <button id="wallet-logout" class="btn btn-secondary wallet-logout-btn" type="button">Logout</button>
+      </div>
     </div>
 
     <div id="wallet-dashboard-page" class="wallet-page">
