@@ -200,7 +200,7 @@ func (a *app) signup(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID := "sess_" + randomID(12)
 	exp := time.Now().UTC().Add(24 * time.Hour)
-	if _, err := tx.ExecContext(ctx, `insert into sessions(session_id,user_id,token_hash,expires_at) values(?,?,?,?)`, sessionID, userID, hashString(sessionID), exp); err != nil {
+	if _, err := tx.ExecContext(ctx, `insert into sessions(session_id,user_id,token_hash,expires_at) values(?,?,?,?)`, sessionID, userID, hashString(sessionID), exp.Format(time.RFC3339)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "failed to create session"})
 		return
 	}
@@ -259,7 +259,7 @@ func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID := "sess_" + randomID(12)
 	exp := time.Now().UTC().Add(24 * time.Hour)
-	if _, err := a.db.ExecContext(ctx, `insert into sessions(session_id,user_id,token_hash,expires_at) values(?,?,?,?)`, sessionID, userID, hashString(sessionID), exp); err != nil {
+	if _, err := a.db.ExecContext(ctx, `insert into sessions(session_id,user_id,token_hash,expires_at) values(?,?,?,?)`, sessionID, userID, hashString(sessionID), exp.Format(time.RFC3339)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "session create failure"})
 		return
 	}
@@ -279,14 +279,19 @@ func (a *app) getSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var userID string
-	var expires time.Time
-	err := a.db.QueryRow(`select user_id, expires_at from sessions where session_id=?`, sessionID).Scan(&userID, &expires)
+	var expiresRaw string
+	err := a.db.QueryRow(`select user_id, expires_at from sessions where session_id=?`, sessionID).Scan(&userID, &expiresRaw)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "session not found"})
 		return
 	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "session query failure"})
+		return
+	}
+	expires, err := parseSessionExpiry(expiresRaw)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "session expiry parse failure"})
 		return
 	}
 	status := "active"
@@ -345,8 +350,12 @@ func (a *app) requireSession(sessionID string) (string, error) {
 		return "", errors.New("session id required")
 	}
 	var userID string
-	var expires time.Time
-	err := a.db.QueryRow(`select user_id, expires_at from sessions where session_id=?`, sessionID).Scan(&userID, &expires)
+	var expiresRaw string
+	err := a.db.QueryRow(`select user_id, expires_at from sessions where session_id=?`, sessionID).Scan(&userID, &expiresRaw)
+	if err != nil {
+		return "", errors.New("invalid session")
+	}
+	expires, err := parseSessionExpiry(expiresRaw)
 	if err != nil {
 		return "", errors.New("invalid session")
 	}
@@ -354,6 +363,26 @@ func (a *app) requireSession(sessionID string) (string, error) {
 		return "", errors.New("session expired")
 	}
 	return userID, nil
+}
+
+func parseSessionExpiry(raw string) (time.Time, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return time.Time{}, errors.New("empty expiry")
+	}
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05-07:00",
+		"2006-01-02 15:04:05",
+	}
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, v); err == nil {
+			return parsed.UTC(), nil
+		}
+	}
+	return time.Time{}, errors.New("unsupported expiry format")
 }
 
 func (a *app) addAccount(w http.ResponseWriter, r *http.Request) {
