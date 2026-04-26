@@ -66,7 +66,24 @@ type AddAccountResponse = {
 const SESSION_KEY = "kvp_wallet_simple_session";
 const TX_KEY = "kvp_wallet_simple_txs";
 const EXPLORER_BASE = (import.meta.env.VITE_MAIN_EXPLORER_URL as string | undefined) || "";
-const BACKEND_BASE = (import.meta.env.VITE_WALLET_BACKEND_URL as string | undefined) || "";
+const BACKEND_BASE_RAW = (import.meta.env.VITE_WALLET_BACKEND_URL as string | undefined) || "";
+
+function normalizeBackendBase(raw: string): string {
+  const value = raw.trim().replace(/\/+$/, "");
+  if (!value) return "";
+  // Allow common misconfiguration where health endpoint is used as base URL.
+  if (value.endsWith("/api/health")) return value.slice(0, -"/api/health".length);
+  if (value.endsWith("/health")) return value.slice(0, -"/health".length);
+  return value;
+}
+
+const BACKEND_BASE = normalizeBackendBase(BACKEND_BASE_RAW);
+
+function buildBackendUrl(path: string): string {
+  if (!BACKEND_BASE) throw new Error("VITE_WALLET_BACKEND_URL is not configured");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${BACKEND_BASE}${normalizedPath}`;
+}
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
 <main id="landing-screen" class="landing">
@@ -303,8 +320,7 @@ function sessionData(): (AuthResponse & { email: string; passkey: string }) | nu
 }
 
 async function getJson<T>(path: string): Promise<T> {
-  if (!BACKEND_BASE) throw new Error("VITE_WALLET_BACKEND_URL is not configured");
-  const response = await fetch(`${BACKEND_BASE}${path}`);
+  const response = await fetch(buildBackendUrl(path));
   if (!response.ok) {
     let detail = "";
     try {
@@ -323,8 +339,7 @@ async function getJson<T>(path: string): Promise<T> {
 }
 
 async function postJson<T>(path: string, payload: unknown): Promise<T> {
-  if (!BACKEND_BASE) throw new Error("VITE_WALLET_BACKEND_URL is not configured");
-  const response = await fetch(`${BACKEND_BASE}${path}`, {
+  const response = await fetch(buildBackendUrl(path), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
