@@ -28,6 +28,14 @@ go run .
 
 Endpoints:
 - `GET /api/health`
+- `POST /api/auth/signup`
+- `POST /api/auth/login`
+- `GET /api/auth/session/{sessionId}`
+- `GET /api/auth/me?sessionId=...`
+- `POST /api/auth/account/add`
+- `POST /api/auth/credential/register`
+- `GET /api/minting/policy`
+- `POST /api/minting/request`
 - `GET /api/kvc/status`
 - `GET /api/kvc/wallet/{address}`
 - `POST /api/kvc/transfer`

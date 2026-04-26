@@ -42,8 +42,27 @@ type AssetCatalogResponse = {
   network: string;
   items: AssetCatalogItem[];
 };
+type AuthResponse = {
+  status: string;
+  userId: string;
+  sessionId: string;
+  accounts: Array<{ address: string; label: string }>;
+  activeAddress: string;
+};
+type AuthMeResponse = {
+  status: string;
+  userId: string;
+  email: string;
+  sessionId: string;
+  accounts: Array<{ address: string; label: string }>;
+  activeAddress: string;
+};
+type AddAccountResponse = {
+  status: string;
+  address: string;
+  label: string;
+};
 
-const USERS_KEY = "kvp_wallet_simple_users";
 const SESSION_KEY = "kvp_wallet_simple_session";
 const TX_KEY = "kvp_wallet_simple_txs";
 const EXPLORER_BASE = (import.meta.env.VITE_MAIN_EXPLORER_URL as string | undefined) || "";
@@ -221,6 +240,9 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         <h3>Profile</h3>
         <label>Email <input id="profile-email" readonly /></label>
         <label>Wallet Address <input id="profile-address" readonly /></label>
+        <label>New Account Label <input id="profile-account-label" placeholder="Account 2" /></label>
+        <button id="profile-add-account-btn" class="btn btn-primary auth-btn" type="button">Add Account</button>
+        <p id="profile-add-account-note" class="auth-message"></p>
       </article>
     </div>
 
@@ -250,18 +272,6 @@ const quickPageButtons = Array.from(
 let selectedTxHash = "";
 let assetCatalog: AssetCatalogItem[] = [];
 
-function users(): Profile[] {
-  try {
-    return JSON.parse(localStorage.getItem(USERS_KEY) || "[]") as Profile[];
-  } catch {
-    return [];
-  }
-}
-
-function saveUsers(next: Profile[]) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(next));
-}
-
 function txs(): TxItem[] {
   try {
     return JSON.parse(localStorage.getItem(TX_KEY) || "[]") as TxItem[];
@@ -274,22 +284,41 @@ function saveTxs(next: TxItem[]) {
   localStorage.setItem(TX_KEY, JSON.stringify(next));
 }
 
-function setSession(email: string) {
-  localStorage.setItem(SESSION_KEY, email);
+function setSession(data: AuthResponse & { email: string; passkey: string }) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(data));
 }
 
 function clearSession() {
   localStorage.removeItem(SESSION_KEY);
 }
 
-function sessionEmail() {
-  return (localStorage.getItem(SESSION_KEY) || "").trim().toLowerCase();
+function sessionData(): (AuthResponse & { email: string; passkey: string }) | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as AuthResponse & { email: string; passkey: string };
+  } catch {
+    return null;
+  }
 }
 
 async function getJson<T>(path: string): Promise<T> {
   if (!BACKEND_BASE) throw new Error("VITE_WALLET_BACKEND_URL is not configured");
   const response = await fetch(`${BACKEND_BASE}${path}`);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const payload = (await response.json()) as { error?: string; message?: string };
+      detail = payload.error || payload.message || "";
+    } catch {
+      try {
+        detail = (await response.text()).trim();
+      } catch {
+        detail = "";
+      }
+    }
+    throw new Error(detail ? `HTTP ${response.status}: ${detail}` : `HTTP ${response.status}`);
+  }
   return response.json() as Promise<T>;
 }
 
@@ -300,7 +329,20 @@ async function postJson<T>(path: string, payload: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const body = (await response.json()) as { error?: string; message?: string };
+      detail = body.error || body.message || "";
+    } catch {
+      try {
+        detail = (await response.text()).trim();
+      } catch {
+        detail = "";
+      }
+    }
+    throw new Error(detail ? `HTTP ${response.status}: ${detail}` : `HTTP ${response.status}`);
+  }
   return response.json() as Promise<T>;
 }
 
@@ -312,15 +354,6 @@ function generatePasskey() {
     if ((i + 1) % 6 === 0 && i < 23) token += "-";
   }
   return token;
-}
-
-function generateAddress() {
-  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let part = "";
-  for (let i = 0; i < 12; i += 1) {
-    part += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return `kvp:wallet:${part}`;
 }
 
 function showLanding() {
@@ -554,16 +587,8 @@ document.querySelector<HTMLButtonElement>("#generate-passkey")!.addEventListener
     output.textContent = "Please enter a valid email.";
     return;
   }
-  const existing = users();
-  if (existing.some((item) => item.email === email)) {
-    output.textContent = "Email already exists. Use Sign In.";
-    return;
-  }
   const passkey = generatePasskey();
-  const address = generateAddress();
-  existing.push({ email, passkey, address });
-  saveUsers(existing);
-  output.textContent = `Email: ${email}\nPasskey: ${passkey}\nAddress: ${address}`;
+  output.textContent = `Email: ${email}\nPasskey: ${passkey}`;
   document.querySelector<HTMLInputElement>("#login-email")!.value = email;
   document.querySelector<HTMLInputElement>("#login-passkey")!.value = passkey;
 });
@@ -576,27 +601,81 @@ document.querySelector<HTMLButtonElement>("#copy-passkey")!.addEventListener("cl
   const passkey = content.slice(at + marker.length).trim();
   if (!passkey) return;
   await navigator.clipboard.writeText(passkey);
+  const email = (document.querySelector<HTMLInputElement>("#create-email")!.value || "").trim().toLowerCase();
+  if (!email) return;
+  const out = document.querySelector<HTMLElement>("#create-output")!;
+  try {
+    const created = await postJson<AuthResponse>("/api/auth/signup", { email, passphrase: passkey });
+    out.textContent = `${content}\nBackend: account created (${created.activeAddress}).`;
+  } catch (error) {
+    out.textContent = `${content}\nBackend: ${(error as Error).message}`;
+  }
 });
 
-document.querySelector<HTMLButtonElement>("#login-btn")!.addEventListener("click", () => {
+document.querySelector<HTMLButtonElement>("#login-btn")!.addEventListener("click", async () => {
   const email = (document.querySelector<HTMLInputElement>("#login-email")!.value || "").trim().toLowerCase();
   const passkey = (document.querySelector<HTMLInputElement>("#login-passkey")!.value || "").trim();
   const out = document.querySelector<HTMLElement>("#login-output")!;
-  const found = users().find((item) => item.email === email && item.passkey === passkey);
-  if (!found) {
-    out.textContent = "Invalid email or passkey.";
-    return;
+  try {
+    const auth = await postJson<AuthResponse>("/api/auth/login", { email, passphrase: passkey });
+    const profile: Profile = {
+      email,
+      passkey,
+      address: auth.activeAddress || auth.accounts[0]?.address || "",
+    };
+    if (!profile.address) {
+      out.textContent = "No wallet account returned by backend.";
+      return;
+    }
+    setSession({ ...auth, email, passkey });
+    out.textContent = "";
+    showWalletMain(profile);
+    void refreshWalletState(profile.address);
+  } catch (error) {
+    out.textContent = `Login failed: ${(error as Error).message}`;
   }
-  setSession(found.email);
-  out.textContent = "";
-  showWalletMain(found);
-  void refreshWalletState(found.address);
 });
 
 document.querySelector<HTMLButtonElement>("#wallet-logout")!.addEventListener("click", () => {
   clearSession();
   showLanding();
 });
+
+document
+  .querySelector<HTMLButtonElement>("#profile-add-account-btn")!
+  .addEventListener("click", async () => {
+    const note = document.querySelector<HTMLElement>("#profile-add-account-note")!;
+    const label = (
+      document.querySelector<HTMLInputElement>("#profile-account-label")!.value || ""
+    ).trim();
+    const session = sessionData();
+    if (!session) {
+      note.textContent = "Session not found. Login again.";
+      return;
+    }
+    try {
+      const created = await postJson<AddAccountResponse>("/api/auth/account/add", {
+        sessionId: session.sessionId,
+        label,
+      });
+      const me = await getJson<AuthMeResponse>(
+        `/api/auth/me?sessionId=${encodeURIComponent(session.sessionId)}`
+      );
+      const activeAddress = me.activeAddress || me.accounts[0]?.address || created.address;
+      setSession({
+        ...session,
+        email: me.email || session.email,
+        accounts: me.accounts,
+        activeAddress,
+      });
+      document.querySelector<HTMLInputElement>("#wallet-main-address")!.value = activeAddress;
+      document.querySelector<HTMLInputElement>("#profile-address")!.value = activeAddress;
+      note.textContent = `Account created: ${created.address}`;
+      await refreshWalletState(activeAddress);
+    } catch (error) {
+      note.textContent = `Add account failed: ${(error as Error).message}`;
+    }
+  });
 
 document.querySelector<HTMLButtonElement>("#copy-address")!.addEventListener("click", async () => {
   const addr = document.querySelector<HTMLInputElement>("#wallet-main-address")!.value;
@@ -665,7 +744,7 @@ document.querySelector<HTMLButtonElement>("#btn-stake")!.addEventListener("click
   note.textContent = `Endpoint staking belum tersedia di backend (asset terpilih: ${selectedAsset.symbol}).`;
 });
 
-document.querySelector<HTMLButtonElement>("#btn-mint")!.addEventListener("click", () => {
+document.querySelector<HTMLButtonElement>("#btn-mint")!.addEventListener("click", async () => {
   const symbol = (document.querySelector<HTMLSelectElement>("#mint-asset-select")!.value || "").trim();
   const amount = (document.querySelector<HTMLInputElement>("#mint-amount")!.value || "").trim();
   const note = document.querySelector<HTMLElement>("#minting-note")!;
@@ -677,7 +756,21 @@ document.querySelector<HTMLButtonElement>("#btn-mint")!.addEventListener("click"
     note.textContent = "Amount must be greater than 0.";
     return;
   }
-  note.textContent = `Endpoint minting belum tersedia di backend (asset terpilih: ${symbol}).`;
+  const session = sessionData();
+  if (!session) {
+    note.textContent = "Session not found. Login again.";
+    return;
+  }
+  try {
+    const result = await postJson<{ status: string; note: string }>("/api/minting/request", {
+      sessionId: session.sessionId,
+      asset: symbol,
+      amount,
+    });
+    note.textContent = `${result.status}: ${result.note}`;
+  } catch (error) {
+    note.textContent = `Minting request failed: ${(error as Error).message}`;
+  }
 });
 
 for (const button of quickPageButtons) {
@@ -688,17 +781,31 @@ for (const button of quickPageButtons) {
 }
 
 (function bootstrap() {
-  const active = sessionEmail();
+  const active = sessionData();
   if (!active) {
     showLanding();
     return;
   }
-  const profile = users().find((item) => item.email === active);
-  if (!profile) {
-    clearSession();
-    showLanding();
-    return;
-  }
-  showWalletMain(profile);
-  void refreshWalletState(profile.address);
+  void (async () => {
+    try {
+      const me = await getJson<AuthMeResponse>(`/api/auth/me?sessionId=${encodeURIComponent(active.sessionId)}`);
+      const profile: Profile = {
+        email: me.email || active.email,
+        passkey: active.passkey,
+        address: me.activeAddress || me.accounts[0]?.address || "",
+      };
+      if (!profile.address) throw new Error("no wallet account");
+      setSession({
+        ...active,
+        email: profile.email,
+        activeAddress: profile.address,
+        accounts: me.accounts,
+      });
+      showWalletMain(profile);
+      await refreshWalletState(profile.address);
+    } catch {
+      clearSession();
+      showLanding();
+    }
+  })();
 })();
