@@ -311,6 +311,11 @@ function clearSession() {
   localStorage.removeItem(SESSION_KEY);
 }
 
+function isSessionErrorMessage(message: string): boolean {
+  const text = message.toLowerCase();
+  return text.includes("invalid session") || text.includes("session expired") || text.includes("http 401");
+}
+
 function sessionData(): (AuthResponse & { email: string; passkey: string }) | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
@@ -690,7 +695,18 @@ document
       note.textContent = `Account created: ${created.address}`;
       await refreshWalletState(activeAddress);
     } catch (error) {
-      note.textContent = `Add account failed: ${(error as Error).message}`;
+      const message = (error as Error).message;
+      if (isSessionErrorMessage(message)) {
+        clearSession();
+        showLogin();
+        document.querySelector<HTMLInputElement>("#login-email")!.value = session.email || "";
+        document.querySelector<HTMLInputElement>("#login-passkey")!.value = session.passkey || "";
+        document.querySelector<HTMLElement>("#login-output")!.textContent =
+          "Session expired/invalid. Please login again.";
+        note.textContent = "";
+        return;
+      }
+      note.textContent = `Add account failed: ${message}`;
     }
   });
 
@@ -786,7 +802,18 @@ document.querySelector<HTMLButtonElement>("#btn-mint")!.addEventListener("click"
     });
     note.textContent = `${result.status}: ${result.note}`;
   } catch (error) {
-    note.textContent = `Minting request failed: ${(error as Error).message}`;
+    const message = (error as Error).message;
+    if (isSessionErrorMessage(message)) {
+      clearSession();
+      showLogin();
+      document.querySelector<HTMLInputElement>("#login-email")!.value = session.email || "";
+      document.querySelector<HTMLInputElement>("#login-passkey")!.value = session.passkey || "";
+      document.querySelector<HTMLElement>("#login-output")!.textContent =
+        "Session expired/invalid. Please login again.";
+      note.textContent = "";
+      return;
+    }
+    note.textContent = `Minting request failed: ${message}`;
   }
 });
 
