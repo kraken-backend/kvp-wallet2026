@@ -23,8 +23,9 @@ import (
 )
 
 type app struct {
-	kvcBase string
-	db      *sql.DB
+	kvcBase      string
+	db           *sql.DB
+	mintTreasury string
 }
 
 type authRequest struct {
@@ -62,6 +63,28 @@ type mintRequest struct {
 	Amount    string `json:"amount"`
 }
 
+type walletPolicyResponse struct {
+	Active struct {
+		PolicyHash         string `json:"policyHash"`
+		Stage              string `json:"stage"`
+		MintEnabled        bool   `json:"mintEnabled"`
+		BurnEnabled        bool   `json:"burnEnabled"`
+		KVCTransferEnabled bool   `json:"kvcTransferEnabled"`
+	} `json:"active"`
+}
+
+type transferPayload struct {
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Asset  string `json:"asset"`
+	Amount string `json:"amount"`
+}
+
+type transferResult struct {
+	TxHash string `json:"txHash"`
+	Status string `json:"status"`
+}
+
 func sessionIdleTimeout() time.Duration {
 	raw := strings.TrimSpace(os.Getenv("SESSION_IDLE_MINUTES"))
 	if raw == "" {
@@ -88,7 +111,11 @@ func main() {
 	if err := runMigrations(db); err != nil {
 		log.Fatal(err)
 	}
-	a := &app{kvcBase: kvcBase, db: db}
+	a := &app{
+		kvcBase:      kvcBase,
+		db:           db,
+		mintTreasury: getenv("WALLET_MINT_TREASURY_ADDRESS", "kvp:demo:user1"),
+	}
 
 	mux := http.NewServeMux()
 
@@ -459,13 +486,35 @@ func (a *app) registerCredential(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *app) mintingPolicy(w http.ResponseWriter, r *http.Request) {
+	body, code, err := proxyRequest(http.MethodGet, fmt.Sprintf("%s/gateway/policy/active?mode=api", a.kvcBase), nil)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+		return
+	}
+	if code != http.StatusOK {
+		writeRawJSON(w, code, body)
+		return
+	}
+	var policy walletPolicyResponse
+	if err := json.Unmarshal(body, &policy); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": "invalid policy payload"})
+		return
+	}
+	status := "disabled"
+	note := "Minting is disabled by active chain policy."
+	if policy.Active.MintEnabled {
+		status = "active"
+		note = "Minting is active and routed to onchain treasury transfer."
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":    "coming-soon",
-		"scope":     "wallet-minting",
-		"note":      "Minting policy execution will open after community phase gate.",
-		"dbReady":   true,
-		"apiReady":  true,
-		"chainReady": false,
+		"status":      status,
+		"scope":       "wallet-minting",
+		"policyHash":  policy.Active.PolicyHash,
+		"stage":       policy.Active.Stage,
+		"mintEnabled": policy.Active.MintEnabled,
+		"apiReady":    true,
+		"chainReady":  true,
+		"note":        note,
 	})
 }
 
@@ -475,15 +524,68 @@ func (a *app) mintingRequest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "invalid payload"})
 		return
 	}
-	if _, err := a.requireSession(req.SessionID); err != nil {
+	userID, err := a.requireSession(req.SessionID)
+	if err != nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": err.Error()})
 		return
 	}
+	assetInput := strings.TrimSpace(req.Asset)
+	if assetInput == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "asset is required"})
+		return
+	}
+	asset := assetInput
+	switch strings.ToLower(assetInput) {
+	case "tkvc":
+		asset = "tKVC"
+	case "kvc":
+		asset = "KVC"
+	}
+	amount := strings.TrimSpace(req.Amount)
+	if amount == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "amount is required"})
+		return
+	}
+	var targetAddress string
+	if err := a.db.QueryRow(
+		`select address from wallet_accounts where user_id=? order by created_at asc limit 1`,
+		userID,
+	).Scan(&targetAddress); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "wallet account not found"})
+		return
+	}
+	payload := transferPayload{
+		From:   a.mintTreasury,
+		To:     targetAddress,
+		Asset:  asset,
+		Amount: amount,
+	}
+	body, code, err := proxyRequest(
+		http.MethodPost,
+		fmt.Sprintf("%s/gateway/tx/simulate-transfer?mode=api", a.kvcBase),
+		payload,
+	)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+		return
+	}
+	if code != http.StatusOK {
+		writeRawJSON(w, code, body)
+		return
+	}
+	var tx transferResult
+	if err := json.Unmarshal(body, &tx); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": "invalid mint tx payload"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "coming-soon",
-		"asset":  req.Asset,
-		"amount": req.Amount,
-		"note":   "Minting request recorded at wallet layer; chain activation is not open yet.",
+		"status":  tx.Status,
+		"asset":   asset,
+		"amount":  amount,
+		"to":      targetAddress,
+		"txHash":  tx.TxHash,
+		"note":    "Minting executed via onchain treasury transfer.",
+		"treasury": a.mintTreasury,
 	})
 }
 
