@@ -131,12 +131,12 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <div class="overlay"></div>
   <section class="content">
     <img class="logo" src="/assets/kvp-logo.png" alt="KVP Logo" />
-    <p class="label">KRAKENUM</p>
+    <p class="label">KRAKENUM CHAIN</p>
     <h1>Krakenum Wallet</h1>
     <div class="hero-actions">
       <button id="open-create" class="btn btn-primary" type="button">Create Wallet</button>
       <button id="open-login" class="btn btn-secondary" type="button">Sign In</button>
-      <a href="${MAIN_EXPLORER_URL}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" type="button">Back to KVP Explorer</a>
+      <a href="${MAIN_EXPLORER_URL}" target="_blank" rel="noopener noreferrer" class="btn btn-primary" type="button">Blockchain</a>
     </div>
   </section>
 </main>
