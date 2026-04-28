@@ -192,7 +192,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       </article>
       <div class="quick-actions">
         <button data-open-page="onchain" class="quick-btn" type="button">Onchain Send/Receive</button>
-        <button data-open-page="staking" class="quick-btn" type="button">Staking</button>
+        <!--<button data-open-page="staking" class="quick-btn" type="button">Staking</button>-->
         <button data-open-page="minting" class="quick-btn" type="button">Minting</button>
       </div>
       <div class="feature-grid">
@@ -232,15 +232,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     </div>
 
     <div id="wallet-staking-page" class="wallet-page hidden">
-      <article class="panel-card">
-        <h3>Staking</h3>
-        <label>Asset
-          <select id="stake-asset-select"></select>
-        </label>
-        <label>Amount <input id="stake-amount" /></label>
-        <button id="btn-stake" class="btn btn-primary auth-btn" type="button">Submit Staking</button>
-      </article>
-      <p id="staking-note" class="auth-message"></p>
+      <!-- Staking feature coming soon -->
     </div>
 
     <div id="wallet-minting-page" class="wallet-page hidden">
@@ -689,7 +681,7 @@ function renderAssetSelect(selectId: string, preferredSymbol = "tKVC") {
     return;
   }
   select.innerHTML = assetCatalog
-    .map((item) => `<option value="${item.symbol}">${item.symbol}${item.transferable ? "" : " (locked)"}</option>`)
+    .map((item) => `<option value="${item.symbol}" ${item.transferable ? "" : "disabled"}>${item.symbol}${item.transferable ? "" : " (locked)"}</option>`)
     .join("");
   const preferred =
     assetCatalog.find((item) => item.symbol === preferredSymbol && item.transferable) ||
@@ -937,8 +929,13 @@ document.querySelector<HTMLButtonElement>("#btn-mint")!.addEventListener("click"
   const symbol = (document.querySelector<HTMLSelectElement>("#mint-asset-select")!.value || "").trim();
   const amount = (document.querySelector<HTMLInputElement>("#mint-amount")!.value || "").trim();
   const note = document.querySelector<HTMLElement>("#minting-note")!;
-  if (!symbol) {
+  const selectedAsset = assetCatalog.find((item) => item.symbol === symbol);
+  if (!selectedAsset) {
     note.textContent = "Asset tidak ditemukan di catalog backend.";
+    return;
+  }
+  if (!selectedAsset.transferable) {
+    note.textContent = `Asset ${selectedAsset.symbol} masih locked dan tidak bisa diminting.`;
     return;
   }
   if (!Number(amount) || Number(amount) <= 0) {
@@ -976,8 +973,13 @@ document.querySelector<HTMLButtonElement>("#btn-burn")!.addEventListener("click"
   const symbol = (document.querySelector<HTMLSelectElement>("#burn-asset-select")!.value || "").trim();
   const amount = (document.querySelector<HTMLInputElement>("#burn-amount")!.value || "").trim();
   const note = document.querySelector<HTMLElement>("#burning-note")!;
-  if (!symbol) {
+  const selectedAsset = assetCatalog.find((item) => item.symbol === symbol);
+  if (!selectedAsset) {
     note.textContent = "Asset tidak ditemukan di catalog backend.";
+    return;
+  }
+  if (!selectedAsset.transferable) {
+    note.textContent = `Asset ${selectedAsset.symbol} masih locked dan tidak bisa diburn.`;
     return;
   }
   if (!Number(amount) || Number(amount) <= 0) {
