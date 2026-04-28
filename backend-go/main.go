@@ -173,6 +173,13 @@ func main() {
 
 	mux := http.NewServeMux()
 
+loggedMux := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		log.Printf("[REQUEST] %s %s", r.Method, r.URL.Path)
+		mux.ServeHTTP(w, r)
+		log.Printf("[RESPONSE] %s %s - %v", r.Method, r.URL.Path, time.Since(start))
+	})
+
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":        true,
@@ -238,7 +245,7 @@ func main() {
 		writeRawJSON(w, code, body)
 	})
 
-	handler := withCORS(mux)
+	handler := withCORS(loggedMux)
 	log.Printf("wallet backend running on :%s (KVC_API_BASE=%s)", port, kvcBase)
 	log.Fatal(http.ListenAndServe(":"+port, handler))
 }
